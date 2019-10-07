@@ -1,16 +1,17 @@
-from sklearn.model_selection import LeaveOneOut
-from sklearn import linear_model
 import matplotlib.pyplot as plt
 import numpy as np
-    
-def LOO(X,Y):
+from sklearn import linear_model
+from sklearn.model_selection import LeaveOneOut
+
+
+def LOO(X, Y):
     loo = LeaveOneOut()
     models = []
     X = np.array(X)
     Y = np.array(Y)
 
     predict_prob = []
-    for train, test in loo.split(X,Y):
+    for train, test in loo.split(X, Y):
         train_X = X[train]
         train_Y = Y[train]
         test_X = X[test]
@@ -21,15 +22,15 @@ def LOO(X,Y):
         models.append(logreg)
         predict_prob.append(logreg.predict_proba(test_X)[0][0])
 
-    print predict_prob
-    plt.scatter(range(21),predict_prob,s = 100)
+    print(predict_prob)
+    plt.scatter(range(21), predict_prob, s=100)
     plt.xlim(0, 21)
     plt.ylim(0, 1)
-    groups = ['H%s' % i for i in range(1,6)] + ['SJ%s' % i for i in range(1,17)]
+    groups = ['H%s' % i for i in range(1, 6)] + ['SJ%s' % i for i in range(1, 17)]
     plt.legend()
 
-    plt.xticks(range(21),groups)
+    plt.xticks(range(21), groups)
     plt.ylabel('P(healthy)')
     plt.title('P(healthy) Predicted by LOOCV Logistic Regression')
-    
-    return predict_prob,models
+
+    return predict_prob, models

@@ -1,21 +1,6 @@
-from scipy.stats import multivariate_normal
-
-
-import os
-import sys
-import glob
-import pickle
-import itertools
-import random
-
-
-import numpy as np
-import pandas as pd
-from scipy.stats import beta
 from scipy.stats import norm
 
-from flowMP_compute import *
-from flowMP_sample import *
+from .flowMP_sample import *
 
 
 def logP_Mondrian_Gaussian_perturbation(indiv_mp, template_mp, stepsize):
@@ -30,20 +15,20 @@ def logP_Mondrian_Gaussian_perturbation(indiv_mp, template_mp, stepsize):
     """
     if template_mp[1] == None and template_mp[2] == None:
         return 0
-    
+
     # find the dimension and location of first cut in the old_sample
     for _ in range(template_mp[0].shape[0]):
-        if template_mp[0][_,1] > template_mp[1][0][_,1]:
+        if template_mp[0][_, 1] > template_mp[1][0][_, 1]:
             break
-    
+
     dim = _
-    pos_template = template_mp[1][0][dim,1]
+    pos_template = template_mp[1][0][dim, 1]
     pos_indiv = indiv_mp[1][0][dim, 1]
-    
-    res = norm(pos_template,(template_mp[0][dim,1] - template_mp[0][dim,0])*stepsize).logpdf(pos_indiv)
-    
-    res += logP_Mondrian_Gaussian_perturbation(indiv_mp[1],template_mp[1],stepsize)
-    res += logP_Mondrian_Gaussian_perturbation(indiv_mp[2],template_mp[2],stepsize)
+
+    res = norm(pos_template, (template_mp[0][dim, 1] - template_mp[0][dim, 0]) * stepsize).logpdf(pos_indiv)
+
+    res += logP_Mondrian_Gaussian_perturbation(indiv_mp[1], template_mp[1], stepsize)
+    res += logP_Mondrian_Gaussian_perturbation(indiv_mp[2], template_mp[2], stepsize)
     return res
 
 
@@ -67,7 +52,7 @@ def joint_logP_Random_Effect(template_mp, indiv_mp_list, data_list, table, steps
 
 
 ## a mini MCMC run to initialize Mondrian process with data
-def init_mp(theta_space, table, data, random_seed, N_MCMC_SAMPLE = 3000, MCMC_GAUSSIAN_STD = 0.1):
+def init_mp(theta_space, table, data, random_seed, N_MCMC_SAMPLE=3000, MCMC_GAUSSIAN_STD=0.1):
     """
     This function initializes template_mp by fitting a MP tree to data, \
         by calling function "flowMP_sample.MP_mcmc" and keep the last accepted sample
@@ -93,9 +78,11 @@ def init_mp(theta_space, table, data, random_seed, N_MCMC_SAMPLE = 3000, MCMC_GA
     #         np.log(np.random.uniform(low=0, high=1.)) <= new_log_p_sample - log_p_sample:
     #         sample = new_sample
     #         log_p_sample = new_log_p_sample
-    return MP_mcmc(data, theta_space, table, random_seed, N_MCMC_SAMPLE = 3000, MCMC_GAUSSIAN_STD = 0.1)[-1]
-    
-def mcmc_RE(theta_space, table, data_list, pooled_data, n_mcmc_sample, mcmc_gaussian_std, random_effect_gaussian_std, chain):
+    return MP_mcmc(data, theta_space, table, random_seed, N_MCMC_SAMPLE=3000, MCMC_GAUSSIAN_STD=0.1)[-1]
+
+
+def mcmc_RE(theta_space, table, data_list, pooled_data, n_mcmc_sample, mcmc_gaussian_std, random_effect_gaussian_std,
+            chain):
     """
     INPUT:
         theta_space: D*2 np array
@@ -110,68 +97,66 @@ def mcmc_RE(theta_space, table, data_list, pooled_data, n_mcmc_sample, mcmc_gaus
         accepts_template_mp_chain: a list of accepted template MP trees
         accepts_indiv_mp_lists_chain: a list of lists of accepted indiv MP trees for each subject
     """
-    np.random.seed(chain)  
-    n_samples = len(data_list)  
-    
+    np.random.seed(chain)
+    n_samples = len(data_list)
+
     accepts_template_mp_chain = []
     accepts_indiv_mp_lists_chain = [[] for i in range(n_samples)]
-    
+
     ### INITIALIZE template_mp AND indivi_mp_list
     template_mp = init_mp(theta_space, table, pooled_data, chain, 100, mcmc_gaussian_std)
-    indiv_mp_list = [np.copy(template_mp) for _ in range(n_samples)] 
-    
+    indiv_mp_list = [np.copy(template_mp) for _ in range(n_samples)]
+
     accepts_template_mp_chain.append(template_mp)
 
     for idx in xrange(n_mcmc_sample):
-        if (idx+1) % (n_mcmc_sample / 10) == 0:
-            mcmc_gaussian_std  = mcmc_gaussian_std / 2
-        
+        if (idx + 1) % (n_mcmc_sample / 10) == 0:
+            mcmc_gaussian_std = mcmc_gaussian_std / 2
+
         # update indiv mondrian processes of each sample
         for _ in range(n_samples):
-            new_sample = Mondrian_Gaussian_perturbation(theta_space,indiv_mp_list[_], mcmc_gaussian_std)
- 
+            new_sample = Mondrian_Gaussian_perturbation(theta_space, indiv_mp_list[_], mcmc_gaussian_std)
+
             log_p = joint_logP_Random_Effect(template_mp, \
-                    [indiv_mp_list[_]],[data_list[_]], table, random_effect_gaussian_std)
+                                             [indiv_mp_list[_]], [data_list[_]], table, random_effect_gaussian_std)
             new_log_p = joint_logP_Random_Effect(template_mp, \
-                    [new_sample],[data_list[_]], table, random_effect_gaussian_std)
-        
-            
-            if new_log_p >  log_p or \
-            np.log(np.random.uniform(low=0, high=1.)) < new_log_p - log_p:
+                                                 [new_sample], [data_list[_]], table, random_effect_gaussian_std)
+
+            if new_log_p > log_p or \
+                    np.log(np.random.uniform(low=0, high=1.)) < new_log_p - log_p:
                 indiv_mp_list[_] = new_sample
                 accepts_indiv_mp_lists_chain[_].append(new_sample)
-                
-                
+
         # update template mondrian process
         new_sample = Mondrian_Gaussian_perturbation(theta_space, template_mp, mcmc_gaussian_std)
-        
-        log_p = joint_logP_Random_Effect(template_mp, indiv_mp_list, 
-                [np.empty((0,table.shape[1])) for _ in range(n_samples)],\
-                table, random_effect_gaussian_std)
 
-        new_log_p = joint_logP_Random_Effect(new_sample, indiv_mp_list, 
-                [np.empty((0,table.shape[1])) for _ in range(n_samples)],\
-                table, random_effect_gaussian_std)
-        
-        if new_log_p >  log_p or \
-        np.log(np.random.uniform(low=0, high=1.)) < new_log_p - log_p:
+        log_p = joint_logP_Random_Effect(template_mp, indiv_mp_list,
+                                         [np.empty((0, table.shape[1])) for _ in range(n_samples)], \
+                                         table, random_effect_gaussian_std)
+
+        new_log_p = joint_logP_Random_Effect(new_sample, indiv_mp_list,
+                                             [np.empty((0, table.shape[1])) for _ in range(n_samples)], \
+                                             table, random_effect_gaussian_std)
+
+        if new_log_p > log_p or \
+                np.log(np.random.uniform(low=0, high=1.)) < new_log_p - log_p:
             template_mp = new_sample
             accepts_template_mp_chain.append(template_mp)
-            
 
         if (idx + 1) % (n_mcmc_sample / 5) == 0:
-            print "Chain %d: Drawing Sample %d ..." % (chain, idx + 1)
-            print "Accepted proposals of indiv mp, template mp: %d, %d, %d, %d, %d, %d" \
-                    % (len(accepts_indiv_mp_lists_chain[0]), \
-                       len(accepts_indiv_mp_lists_chain[1]), \
-                       len(accepts_indiv_mp_lists_chain[2]), \
-                       len(accepts_indiv_mp_lists_chain[3]), \
-                       len(accepts_indiv_mp_lists_chain[4]), \
-                       len(accepts_template_mp_chain))
-                
-    return accepts_template_mp_chain,accepts_indiv_mp_lists_chain
+            print("Chain %d: Drawing Sample %d ..." % (chain, idx + 1))
+            print("Accepted proposals of indiv mp, template mp: %d, %d, %d, %d, %d, %d" \
+                  % (len(accepts_indiv_mp_lists_chain[0]), \
+                     len(accepts_indiv_mp_lists_chain[1]), \
+                     len(accepts_indiv_mp_lists_chain[2]), \
+                     len(accepts_indiv_mp_lists_chain[3]), \
+                     len(accepts_indiv_mp_lists_chain[4]), \
+                     len(accepts_template_mp_chain)))
 
-def mcmc_condition_on_template(data,template_mp,theta_space, n_mcmc_sample=500,mcmc_gaussian_std=0.1):
+    return accepts_template_mp_chain, accepts_indiv_mp_lists_chain
+
+
+def mcmc_condition_on_template(data, template_mp, theta_space, n_mcmc_sample=500, mcmc_gaussian_std=0.1):
     """
     This function is called in the diagosis stage to fit a MP tree to each sample conditioned on healthy / unhealthy template MP trees.
     INPUT:
@@ -186,25 +171,24 @@ def mcmc_condition_on_template(data,template_mp,theta_space, n_mcmc_sample=500,m
     indiv_mp = template_mp
     joint_logP = []
     accepts_indiv_mp_list = []
-    
+
     for idx in xrange(n_mcmc_sample):
-        if (idx+1) % (n_mcmc_sample / 4) == 0:
-            mcmc_gaussian_std  = mcmc_gaussian_std / 5
-        
-        new_sample = Mondrian_Gaussian_perturbation(theta_space,indiv_mp, mcmc_gaussian_std)
+        if (idx + 1) % (n_mcmc_sample / 4) == 0:
+            mcmc_gaussian_std = mcmc_gaussian_std / 5
+
+        new_sample = Mondrian_Gaussian_perturbation(theta_space, indiv_mp, mcmc_gaussian_std)
 
         log_p = joint_logP_Random_Effect(template_mp, \
-                [indiv_mp],[data], table, random_effect_gaussian_std)
+                                         [indiv_mp], [data], table, random_effect_gaussian_std)
         new_log_p = joint_logP_Random_Effect(template_mp, \
-                [new_sample],[data], table, random_effect_gaussian_std)
+                                             [new_sample], [data], table, random_effect_gaussian_std)
 
-
-        if new_log_p >  log_p or \
-        np.log(np.random.uniform(low=0, high=1.)) < new_log_p - log_p:
+        if new_log_p > log_p or \
+                np.log(np.random.uniform(low=0, high=1.)) < new_log_p - log_p:
             indiv_mp = new_sample
             accepts_indiv_mp_list.append(new_sample)
             joint_logP.append(new_log_p)
-                
-    print "Accepted proposals of indiv mp, template mp: %d" % len(accepts_indiv_mp_list)
-                
+
+    print("Accepted proposals of indiv mp, template mp: %d" % len(accepts_indiv_mp_list))
+
     return joint_logP, accepts_indiv_mp_list
